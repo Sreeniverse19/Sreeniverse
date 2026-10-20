@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SYNAPSE — Memory Network</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #020210;
+  --node: #7b61ff;
+  --node-glow: rgba(123,97,255,0.4);
+  --active: #00ffc8;
+  --active-glow: rgba(0,255,200,0.5);
+  --wrong: #ff3366;
+  --wrong-glow: rgba(255,51,102,0.5);
+  --connection: rgba(123,97,255,0.15);
+  --connection-active: rgba(0,255,200,0.6);
+  --text: #f0ece2;
+}
+
+html, body {
+  height: 100%;
+  height: 100dvh;
+}
+
+body {
+  background: var(--bg);
+  overflow: hidden;
+  font-family: 'Space Grotesk', sans-serif;
+  color: var(--text);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  position: fixed;
+  width: 100%;
+}
+
+canvas {
+  display: block;
+  touch-action: none;
+}
+
+/* ─── HUD ─── */
+.hud {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 1.2rem 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.hud-left, .hud-right { display: flex; flex-direction: column; gap: 0.2rem; }
+.hud-right { align-items: flex-end; }
+
+.hud-label {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.25em;
+  color: rgba(255,255,255,0.3);
+}
+
+.hud-value {
+  font-family: 'Syne', sans-serif;
+  font-size: 1.6rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.hud-value.score-val {
+  background: linear-gradient(135deg, var(--node), var(--active));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Center Message ─── */
+.center-msg {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 150;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+
+.center-msg.visible { opacity: 1; }
+
+.center-msg .msg-text {
+  font-family: 'Syne', sans-serif;
+  font-size: clamp(1.5rem, 5vw, 3rem);
+  font-weight: 800;
+  color: var(--active);
+  text-shadow: 0 0 30px var(--active-glow);
+}
+
+.center-msg .msg-sub {
+  font-size: 0.9rem;
+  color: rgba(255,255,255,0.4);
+  margin-top: 0.5rem;
+}
+
+/* ─── Sequence Display ─── */
+.seq-dots {
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.seq-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1);
+  transition: background 0.3s, transform 0.3s;
+}
+
+.seq-dot.done { background: var(--active); transform: scale(1.3); }
+.seq-dot.current { background: var(--node); transform: scale(1.5); box-shadow: 0 0 10px var(--node-glow); }
+.seq-dot.wrong { background: var(--wrong); }
+
+/* ─── Screens ─── */
+.screen-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  background: rgba(2,2,16,0.9);
+  backdrop-filter: blur(30px);
+  transition: opacity 0.5s;
+  padding: 2rem;
+}
+
+.screen-overlay.hidden { opacity: 0; pointer-events: none; }
+
+.screen-title {
+  font-family: 'Syne', sans-serif;
+  font-size: clamp(3rem, 10vw, 7rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  background: linear-gradient(135deg, var(--node), var(--active));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1;
+  margin-bottom: 1rem;
+}
+
+.screen-sub {
+  font-size: 1rem;
+  color: rgba(255,255,255,0.4);
+  text-align: center;
+  max-width: 450px;
+  line-height: 1.7;
+  margin-bottom: 2.5rem;
+}
+
+.screen-btn {
+  padding: 1rem 3rem;
+  border-radius: 60px;
+  background: linear-gradient(135deg, var(--node), #00ffc8);
+  color: var(--bg);
+  border: none;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.screen-btn:hover {
+  transform: translateY(-3px) scale(1.05);
+  box-shadow: 0 15px 40px rgba(0,255,200,0.3);
+}
+
+.instructions {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 2.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.instr {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.7rem 1.2rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+}
+
+.instr-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.instr-text {
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.5);
+  line-height: 1.4;
+}
+
+.instr-text strong { color: rgba(255,255,255,0.8); }
+
+/* ─── Game Over Stats ─── */
+.final-score {
+  font-family: 'Syne', sans-serif;
+  font-size: 4rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, #ffd700, #ff9500);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 0.3rem;
+}
+
+.final-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  color: rgba(255,255,255,0.3);
+  margin-bottom: 2rem;
+}
+
+.stats-row {
+  display: flex;
+  gap: 2.5rem;
+  margin-bottom: 2.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.stat-item { text-align: center; }
+
+.stat-item .val {
+  font-family: 'Syne', sans-serif;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: white;
+}
+
+.stat-item .lbl {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: rgba(255,255,255,0.3);
+  margin-top: 0.2rem;
+}
+
+.back-link {
+  position: fixed;
+  top: 1.2rem;
+  left: 1.5rem;
+  z-index: 300;
+  color: rgba(255,255,255,0.4);
+  text-decoration: none;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: color 0.3s;
+}
+
+.back-link:hover { color: white; }
+
+/* ─── Responsive ─── */
+@media (max-width: 768px) {
+  .hud { padding: 0.8rem 1rem; }
+  .hud-value { font-size: 1.3rem; }
+  .instructions { flex-direction: column; gap: 0.7rem; align-items: center; }
+  .screen-title { font-size: clamp(2.5rem, 12vw, 5rem); }
+  .screen-sub { font-size: 0.9rem; }
+  .final-score { font-size: 3rem; }
+  .stats-row { gap: 1.5rem; }
+  .seq-dots { bottom: 1.5rem; }
+  .seq-dot { width: 6px; height: 6px; }
+  .back-link { font-size: 0.7rem; top: 0.8rem; left: 0.8rem; }
+}
+</style>
+</head>
+<body>
+
+<a href="index.html" class="back-link">← Back to site</a>
+
+<canvas id="gameCanvas"></canvas>
+
+<!-- HUD -->
+<div class="hud" id="hud" style="display:none;">
+  <div class="hud-left">
+    <span class="hud-label">Score</span>
+    <span class="hud-value score-val" id="scoreDisplay">0</span>
+  </div>
+  <div class="hud-right">
+    <span class="hud-label">Level</span>
+    <span class="hud-value" id="levelDisplay">1</span>
+    <span class="hud-label" style="margin-top:0.4rem">Best</span>
+    <span class="hud-value" id="bestDisplay">0</span>
+  </div>
+</div>
+
+<!-- Center Message -->
+<div class="center-msg" id="centerMsg">
+  <div class="msg-text" id="msgText"></div>
+  <div class="msg-sub" id="msgSub"></div>
+</div>
+
+<!-- Sequence Progress Dots -->
+<div class="seq-dots" id="seqDots" style="display:none;"></div>
+
+<!-- Start Screen -->
+<div class="screen-overlay" id="startScreen">
+  <div class="screen-title">SYNAPSE</div>
+  <p class="screen-sub">
+    Watch the neural network fire. Memorize the sequence.<br>
+    Repeat it perfectly — or lose your mind trying.
+  </p>
+  <div class="instructions">
+    <div class="instr">
+      <div class="instr-icon" style="background:rgba(0,255,200,0.15);">◉</div>
+      <div class="instr-text"><strong>Watch</strong> nodes light up in sequence</div>
+    </div>
+    <div class="instr">
+      <div class="instr-icon" style="background:rgba(123,97,255,0.15);">↻</div>
+      <div class="instr-text"><strong>Repeat</strong> the exact same order</div>
+    </div>
+    <div class="instr">
+      <div class="instr-icon" style="background:rgba(255,51,102,0.15);">⚡</div>
+      <div class="instr-text"><strong>Survive</strong> as the network evolves</div>
+    </div>
+  </div>
+  <button class="screen-btn" id="startBtn">Awaken</button>
+</div>
+
+<!-- Game Over Screen -->
+<div class="screen-overlay hidden" id="gameOverScreen">
+  <div class="screen-title" style="font-size:clamp(2rem,6vw,4rem);margin-bottom:1.5rem;">DISCONNECTED</div>
+  <div class="final-score" id="finalScore">0</div>
+  <div class="final-label">Neural Score</div>
+  <div class="stats-row">
+    <div class="stat-item">
+      <div class="val" id="finalLevel">1</div>
+      <div class="lbl">Level</div>
+    </div>
+    <div class="stat-item">
+      <div class="val" id="finalSeq">0</div>
+      <div class="lbl">Longest Seq</div>
+    </div>
+    <div class="stat-item">
+      <div class="val" id="finalPerfect">0</div>
+      <div class="lbl">Perfect Rounds</div>
+    </div>
+  </div>
+  <button class="screen-btn" id="restartBtn">Reconnect</button>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── Game State ───
+let nodes = [];
+let connections = [];
+let sequence = [];
+let playerIndex = 0;
+let phase = 'idle'; // idle, showing, input, transition, gameover
+let score = 0;
+let level = 1;
+let bestScore = parseInt(localStorage.getItem('synapse_best') || '0');
+let perfectRounds = 0;
+let longestSeq = 0;
+let showIndex = 0;
+let showTimer = 0;
+let showInterval = 600;
+let lives = 3;
+let networkRotation = 0;
+let networkRotationSpeed = 0;
+let pulseTime = 0;
+let particles = [];
+let ripples = [];
+let flashNodes = {};
+let wrongNode = -1;
+let wrongTimer = 0;
+let transitionTimer = 0;
+
+document.getElementById('bestDisplay').textContent = bestScore;
+
+// ─── Node Class ───
+class Node {
+  constructor(x, y, id) {
+    this.baseX = x;
+    this.baseY = y;
+    this.x = x;
+    this.y = y;
+    this.id = id;
+    this.radius = 18;
+    this.glow = 0;
+    this.active = false;
+    this.hoverScale = 1;
+    this.pulsePhase = Math.random() * Math.PI * 2;
+  }
+
+  update(dt) {
+    if (this.glow > 0) this.glow -= dt * 2;
+    if (this.glow < 0) this.glow = 0;
+
+    const breathe = Math.sin(pulseTime * 2 + this.pulsePhase) * 2;
+    this.displayRadius = this.radius + breathe;
+
+    if (this.hoverScale > 1) this.hoverScale += (1 - this.hoverScale) * 0.1;
+  }
+
+  draw() {
+    const r = this.displayRadius * this.hoverScale;
+    const isActive = this.glow > 0.1;
+    const isWrong = wrongNode === this.id && wrongTimer > 0;
+
+    let color, glowColor;
+    if (isWrong) {
+      color = 'var(--wrong)';
+      glowColor = 'var(--wrong-glow)';
+    } else if (isActive) {
+      color = 'var(--active)';
+      glowColor = 'var(--active-glow)';
+    } else {
+      color = 'var(--node)';
+      glowColor = 'var(--node-glow)';
+    }
+
+    // Outer glow
+    const glowRadius = r * (2.5 + (isActive ? this.glow * 2 : 0));
+    const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, glowRadius);
+    if (isWrong) {
+      grad.addColorStop(0, `rgba(255,51,102,${0.3 * wrongTimer})`);
+      grad.addColorStop(1, 'rgba(255,51,102,0)');
+    } else if (isActive) {
+      grad.addColorStop(0, `rgba(0,255,200,${0.25 * this.glow})`);
+      grad.addColorStop(1, 'rgba(0,255,200,0)');
+    } else {
+      grad.addColorStop(0, 'rgba(123,97,255,0.08)');
+      grad.addColorStop(1, 'rgba(123,97,255,0)');
+    }
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, glowRadius, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Main node
+    const nodeGrad = ctx.createRadialGradient(this.x - r * 0.2, this.y - r * 0.2, 0, this.x, this.y, r);
+    if (isWrong) {
+      nodeGrad.addColorStop(0, '#ff6688');
+      nodeGrad.addColorStop(1, '#cc2244');
+    } else if (isActive) {
+      nodeGrad.addColorStop(0, '#66ffdd');
+      nodeGrad.addColorStop(1, '#00cc99');
+    } else {
+      nodeGrad.addColorStop(0, '#9980ff');
+      nodeGrad.addColorStop(1, '#5a40cc');
+    }
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = nodeGrad;
+    ctx.fill();
+
+    // Inner bright core
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r * 0.35, 0, Math.PI * 2);
+    ctx.fillStyle = isWrong ? 'rgba(255,200,200,0.7)' : isActive ? 'rgba(200,255,240,0.8)' : 'rgba(200,190,255,0.5)';
+    ctx.fill();
+
+    // Ring pulse when active
+    if (isActive && this.glow > 0.3) {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, r * (1.5 + (1 - this.glow) * 2), 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(0,255,200,${this.glow * 0.3})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+
+  contains(px, py) {
+    const dx = px - this.x;
+    const dy = py - this.y;
+    return Math.sqrt(dx * dx + dy * dy) < this.radius * 2.2;
+  }
+}
+
+// ─── Generate Network ───
+function generateNetwork() {
+  nodes = [];
+  connections = [];
+
+  const nodeCount = Math.min(5 + Math.floor(level / 2), 12);
+  const centerX = W / 2;
+  const centerY = H / 2;
+  const baseRadius = Math.min(W, H) * 0.3;
+
+  // Place nodes in a roughly circular pattern with some randomness
+  for (let i = 0; i < nodeCount; i++) {
+    const angle = (Math.PI * 2 / nodeCount) * i + (Math.random() - 0.5) * 0.4;
+    const dist = baseRadius * (0.7 + Math.random() * 0.5);
+    const x = centerX + Math.cos(angle) * dist;
+    const y = centerY + Math.sin(angle) * dist;
+    nodes.push(new Node(x, y, i));
+  }
+
+  // Create connections (each node connects to 2-3 neighbors)
+  for (let i = 0; i < nodeCount; i++) {
+    // Connect to next node (ring)
+    const next = (i + 1) % nodeCount;
+    connections.push({ from: i, to: next });
+
+    // Add some cross-connections for complexity
+    if (level > 2 && Math.random() < 0.4) {
+      const skip = (i + 2 + Math.floor(Math.random() * (nodeCount - 3))) % nodeCount;
+      if (!connections.some(c => (c.from === i && c.to === skip) || (c.from === skip && c.to === i))) {
+        connections.push({ from: i, to: skip });
+      }
+    }
+  }
+
+  // Apply rotation for higher levels
+  networkRotationSpeed = level > 5 ? 0.0003 * Math.min(level - 5, 5) : 0;
+}
+
+function rotateNetwork(dt) {
+  if (networkRotationSpeed === 0) return;
+  networkRotation += networkRotationSpeed * dt * 60;
+  const cx = W / 2, cy = H / 2;
+  nodes.forEach(node => {
+    const dx = node.baseX - cx;
+    const dy = node.baseY - cy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const angle = Math.atan2(dy, dx) + networkRotation;
+    node.x = cx + Math.cos(angle) * dist;
+    node.y = cy + Math.sin(angle) * dist;
+  });
+}
+
+// ─── Generate Sequence ───
+function generateSequence() {
+  const len = 3 + Math.floor(level * 0.8);
+  sequence = [];
+  let last = -1;
+  for (let i = 0; i < len; i++) {
+    let next;
+    // Pick from connected nodes for more logical sequences
+    if (last >= 0 && Math.random() < 0.6) {
+      const neighbors = connections
+        .filter(c => c.from === last || c.to === last)
+        .map(c => c.from === last ? c.to : c.from);
+      if (neighbors.length > 0) {
+        next = neighbors[Math.floor(Math.random() * neighbors.length)];
+      }
+    }
+    if (next === undefined || next === last) {
+      do { next = Math.floor(Math.random() * nodes.length); } while (next === last);
+    }
+    sequence.push(next);
+    last = next;
+  }
+  if (sequence.length > longestSeq) longestSeq = sequence.length;
+}
+
+// ─── Show Sequence ───
+function startShowSequence() {
+  phase = 'showing';
+  showIndex = 0;
+  showTimer = 0;
+  showInterval = Math.max(300, 600 - level * 25);
+  playerIndex = 0;
+  wrongNode = -1;
+
+  showMessage(`Level ${level}`, `${sequence.length} nodes to memorize`);
+  setTimeout(() => hideMessage(), 1500);
+
+  updateSeqDots();
+}
+
+// ─── Sequence Dots ───
+function updateSeqDots() {
+  const container = document.getElementById('seqDots');
+  container.innerHTML = '';
+  container.style.display = 'flex';
+  for (let i = 0; i < sequence.length; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'seq-dot';
+    if (phase === 'input') {
+      if (i < playerIndex) dot.classList.add('done');
+      else if (i === playerIndex) dot.classList.add('current');
+    } else if (phase === 'showing') {
+      if (i <= showIndex) dot.classList.add('current');
+    }
+    container.appendChild(dot);
+  }
+}
+
+// ─── Particle Effects ───
+function spawnNodeParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1.5 + Math.random() * 3;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      radius: 1.5 + Math.random() * 2,
+      color,
+      life: 1,
+      decay: 1.5 + Math.random()
+    });
+  }
+}
+
+function spawnConnectionPulse(fromNode, toNode) {
+  ripples.push({
+    fromX: fromNode.x, fromY: fromNode.y,
+    toX: toNode.x, toY: toNode.y,
+    progress: 0,
+    speed: 2,
+    life: 1
+  });
+}
+
+// ─── Messages ───
+function showMessage(text, sub) {
+  const el = document.getElementById('centerMsg');
+  document.getElementById('msgText').textContent = text;
+  document.getElementById('msgSub').textContent = sub || '';
+  el.classList.add('visible');
+}
+
+function hideMessage() {
+  document.getElementById('centerMsg').classList.remove('visible');
+}
+
+// ─── Input Handling ───
+function handleInput(x, y) {
+  if (phase !== 'input') return;
+
+  for (let i = 0; i < nodes.length; i++) {
+    if (nodes[i].contains(x, y)) {
+      nodes[i].hoverScale = 1.3;
+
+      if (sequence[playerIndex] === i) {
+        // Correct!
+        nodes[i].glow = 1;
+        spawnNodeParticles(nodes[i].x, nodes[i].y, 'active', 10);
+
+        // Pulse connection from previous
+        if (playerIndex > 0) {
+          spawnConnectionPulse(nodes[sequence[playerIndex - 1]], nodes[i]);
+        }
+
+        playerIndex++;
+        score += 10 * level;
+        document.getElementById('scoreDisplay').textContent = score;
+        updateSeqDots();
+
+        if (playerIndex >= sequence.length) {
+          // Round complete!
+          phase = 'transition';
+          transitionTimer = 2;
+          perfectRounds++;
+          score += 50 * level;
+          document.getElementById('scoreDisplay').textContent = score;
+          showMessage('Perfect!', `+${50 * level} bonus`);
+          setTimeout(() => {
+            hideMessage();
+            nextLevel();
+          }, 1500);
+        }
+      } else {
+        // Wrong!
+        wrongNode = i;
+        wrongTimer = 1;
+        nodes[i].glow = 1;
+        spawnNodeParticles(nodes[i].x, nodes[i].y, 'wrong', 15);
+        lives--;
+
+        // Flash correct node
+        nodes[sequence[playerIndex]].glow = 1;
+
+        if (lives <= 0) {
+          phase = 'gameover';
+          showMessage('Wrong node!', 'Network disconnected');
+          setTimeout(() => {
+            hideMessage();
+            gameOver();
+          }, 1200);
+        } else {
+          showMessage(`Wrong!`, `${lives} ${lives === 1 ? 'life' : 'lives'} left — watch again`);
+          phase = 'transition';
+          setTimeout(() => {
+            hideMessage();
+            playerIndex = 0;
+            startShowSequence();
+          }, 1500);
+        }
+      }
+      break;
+    }
+  }
+}
+
+// Mouse & Touch
+canvas.addEventListener('click', (e) => handleInput(e.clientX, e.clientY));
+canvas.addEventListener('touchend', (e) => {
+  if (e.changedTouches.length > 0) {
+    const t = e.changedTouches[0];
+    handleInput(t.clientX, t.clientY);
+  }
+});
+
+// ─── Level Progression ───
+function nextLevel() {
+  level++;
+  document.getElementById('levelDisplay').textContent = level;
+  generateNetwork();
+  generateSequence();
+  setTimeout(() => startShowSequence(), 800);
+}
+
+// ─── Game Over ───
+function gameOver() {
+  phase = 'gameover';
+  document.getElementById('hud').style.display = 'none';
+  document.getElementById('seqDots').style.display = 'none';
+
+  if (score > bestScore) {
+    bestScore = score;
+    localStorage.setItem('synapse_best', bestScore);
+  }
+
+  document.getElementById('finalScore').textContent = score;
+  document.getElementById('finalLevel').textContent = level;
+  document.getElementById('finalSeq').textContent = longestSeq;
+  document.getElementById('finalPerfect').textContent = perfectRounds;
+
+  document.getElementById('gameOverScreen').classList.remove('hidden');
+}
+
+// ─── Start Game ───
+function startGame() {
+  document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('gameOverScreen').classList.add('hidden');
+  document.getElementById('hud').style.display = 'flex';
+
+  score = 0;
+  level = 1;
+  lives = 3;
+  perfectRounds = 0;
+  longestSeq = 0;
+  networkRotation = 0;
+  particles = [];
+  ripples = [];
+
+  document.getElementById('scoreDisplay').textContent = '0';
+  document.getElementById('levelDisplay').textContent = '1';
+  document.getElementById('bestDisplay').textContent = bestScore;
+
+  generateNetwork();
+  generateSequence();
+  setTimeout(() => startShowSequence(), 1000);
+}
+
+// ─── Drawing ───
+function drawBackground() {
+  // Deep void
+  const grad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7);
+  grad.addColorStop(0, '#0a0a25');
+  grad.addColorStop(1, '#020210');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(123,97,255,0.03)';
+  ctx.lineWidth = 1;
+  const gridSize = 60;
+  for (let x = 0; x < W; x += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+  for (let y = 0; y < H; y += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+}
+
+function drawConnections() {
+  connections.forEach(conn => {
+    const from = nodes[conn.from];
+    const to = nodes[conn.to];
+
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+
+    // Check if this connection is part of the active sequence
+    let isActive = false;
+    if (phase === 'showing' || phase === 'input') {
+      for (let i = 0; i < sequence.length - 1; i++) {
+        if ((sequence[i] === conn.from && sequence[i + 1] === conn.to) ||
+            (sequence[i] === conn.to && sequence[i + 1] === conn.from)) {
+          if (phase === 'showing' && i < showIndex) isActive = true;
+          if (phase === 'input' && i < playerIndex) isActive = true;
+        }
+      }
+    }
+
+    if (isActive) {
+      ctx.strokeStyle = 'rgba(0,255,200,0.25)';
+      ctx.lineWidth = 2.5;
+    } else {
+      const pulse = Math.sin(pulseTime + conn.from * 0.5) * 0.03 + 0.08;
+      ctx.strokeStyle = `rgba(123,97,255,${pulse})`;
+      ctx.lineWidth = 1;
+    }
+    ctx.stroke();
+  });
+}
+
+function drawRipples() {
+  ripples.forEach(r => {
+    const x = r.fromX + (r.toX - r.fromX) * r.progress;
+    const y = r.fromY + (r.toY - r.fromY) * r.progress;
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, 12);
+    grad.addColorStop(0, `rgba(0,255,200,${r.life * 0.8})`);
+    grad.addColorStop(1, 'rgba(0,255,200,0)');
+    ctx.beginPath();
+    ctx.arc(x, y, 12, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+  });
+}
+
+function drawLives() {
+  const startX = W / 2 - (lives - 1) * 15;
+  const y = 25;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.arc(startX + i * 30, y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = i < lives ? 'rgba(0,255,200,0.8)' : 'rgba(255,255,255,0.1)';
+    ctx.fill();
+  }
+}
+
+// ─── Main Loop ───
+let lastTime = 0;
+
+function loop(timestamp) {
+  const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+  lastTime = timestamp;
+  pulseTime += dt;
+
+  // Update
+  rotateNetwork(dt);
+  nodes.forEach(n => n.update(dt));
+
+  // Wrong node flash
+  if (wrongTimer > 0) {
+    wrongTimer -= dt * 2;
+    if (wrongTimer <= 0) { wrongTimer = 0; wrongNode = -1; }
+  }
+
+  // Show sequence
+  if (phase === 'showing') {
+    showTimer += dt * 1000;
+    if (showTimer >= showInterval) {
+      showTimer = 0;
+      if (showIndex < sequence.length) {
+        const nodeId = sequence[showIndex];
+        nodes[nodeId].glow = 1;
+        spawnNodeParticles(nodes[nodeId].x, nodes[nodeId].y, 'active', 8);
+
+        if (showIndex > 0) {
+          spawnConnectionPulse(nodes[sequence[showIndex - 1]], nodes[nodeId]);
+        }
+
+        showIndex++;
+        updateSeqDots();
+      } else {
+        // Done showing — player's turn
+        phase = 'input';
+        playerIndex = 0;
+        updateSeqDots();
+        showMessage('Your turn!', 'Repeat the sequence');
+        setTimeout(() => hideMessage(), 1000);
+      }
+    }
+  }
+
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * dt * 60;
+    p.y += p.vy * dt * 60;
+    p.vx *= 0.97;
+    p.vy *= 0.97;
+    p.life -= p.decay * dt;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  // Update ripples
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    const r = ripples[i];
+    r.progress += r.speed * dt;
+    r.life -= dt;
+    if (r.progress >= 1 || r.life <= 0) ripples.splice(i, 1);
+  }
+
+  // Draw
+  drawBackground();
+  drawConnections();
+  drawRipples();
+
+  // Draw particles
+  particles.forEach(p => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.radius * p.life, 0, Math.PI * 2);
+    if (p.color === 'active') {
+      ctx.fillStyle = `rgba(0,255,200,${p.life * 0.7})`;
+    } else if (p.color === 'wrong') {
+      ctx.fillStyle = `rgba(255,51,102,${p.life * 0.7})`;
+    } else {
+      ctx.fillStyle = `rgba(123,97,255,${p.life * 0.7})`;
+    }
+    ctx.fill();
+  });
+
+  nodes.forEach(n => n.draw());
+
+  if (phase !== 'idle' && phase !== 'gameover') drawLives();
+
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+
+// ─── Button Handlers ───
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('restartBtn').addEventListener('click', startGame);
+</script>
+</body>
+</html>
